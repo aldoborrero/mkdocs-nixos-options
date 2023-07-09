@@ -1,0 +1,38 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "mkdocs-nixos-options"
+version = "0.1.0"
+description = "Render your NixOS options on mkdocs"
+authors = ["Aldo Borrero <82811+aldoborrero@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "mkdocs_nixos_options" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+mkdocs = "^1.4.0"
+jinja2 = "^3.1.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+pytest-mock = "*"
+pytest-randomly = "*"
+
+[tool.poetry.plugins."mkdocs.plugins"]
+"nixos-options" = "mkdocs_nixos_options.plugin:NixOsOptionsPlugin"
+
+[tool.isort]
+# Force imports to be sorted by module, independent of import type
+force_sort_within_sections = true
+
+# Group first party and local folder imports together
+no_lines_before = ["LOCALFOLDER"]
+
+# Configure isort to work without access to site-packages
+known_first_party = ["mkdocs_nixos_options", "tests"]
+
+# Settings for Black compatibility
+profile = "black"
