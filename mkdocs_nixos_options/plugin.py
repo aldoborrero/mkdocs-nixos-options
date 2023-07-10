@@ -20,6 +20,7 @@ class NixOsOptionsPlugin(BasePlugin):
     config_scheme = (
         ("enable", config_options.Type(bool, default=True)),
         ("nix_bin", config_options.Type(str, default="nix")),
+        ("nix_command_extra_args", config_options.Type(str, default="")),
         ("template", config_options.Type(str, default="default")),
     )
 
@@ -135,7 +136,8 @@ class NixOsOptionsPlugin(BasePlugin):
             "--json",
             "--expr",
             self.eval_expression(module_path),
-        ]
+            self.config["nix_command_extra_args"],
+        ] + ["--extra-experimental-features", "flakes nix-command"]
         self.log.debug(f"Running command: {' '.join(command)}")
         try:
             result = subprocess.run(
