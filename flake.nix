@@ -28,22 +28,168 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    flake-compat.url = "github:nix-community/flake-compat";
+    devour-flake = {
+      url = "github:srid/devour-flake";
+      flake = false;
+    };
+    lib-extras = {
+      url = "github:aldoborrero/lib-extras/v0.2.2";
+      inputs.devshell.follows = "devshell";
+      inputs.flake-parts.follows = "flake-parts";
+      inputs.flake-root.follows = "flake-root";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
   };
 
-  outputs = inputs @ {flake-parts, ...}:
+  outputs = inputs @ {
+    flake-parts,
+    nixpkgs,
+    lib-extras,
+    ...
+  }: let
+    lib = nixpkgs.lib.extend (l: _: {extras = lib-extras.lib l;});
+  in
     flake-parts.lib.mkFlake {
       inherit inputs;
+      specialArgs = {inherit lib;};
     }
-    rec {
-      imports = [./nix];
+    {
+      imports = [
+        inputs.devshell.flakeModule
+        inputs.flake-parts.flakeModules.easyOverlay
+        inputs.flake-root.flakeModule
+        inputs.treefmt-nix.flakeModule
+      ];
+
       systems = ["x86_64-linux"];
+
+      debug = false;
+
       perSystem = {
         pkgs,
+        pkgsUnstable,
         lib,
+        config,
+        system,
         ...
       }: {
-        packages.mkdocs-nixos-options = pkgs.poetry2nix.mkPoetryApplication {
-          projectDir = lib.cleanSource ./.;
+        # nixpkgs
+        _module.args = {
+          pkgs = lib.extras.nix.mkNixpkgs {
+            inherit system;
+            inherit (inputs) nixpkgs;
+          };
+          pkgsUnstable = lib.extras.nix.mkNixpkgs {
+            inherit system;
+            nixpkgs = inputs.nixpkgs-unstable;
+          };
+        };
+
+        # devshell
+        devshells.default = {
+          name = "mkdocs-nixos-options";
+          packages = with pkgs; [
+            poetry
+            python311
+          ];
+          commands = [
+            {
+              category = "python";
+              name = "pytest";
+              help = "Invoke pytest directly";
+              command = ''poetry run pytest $@'';
+            }
+            {
+              category = "Tools";
+              name = "fmt";
+              help = "Format the source tree";
+              command = "nix fmt";
+            }
+            {
+              category = "Tools";
+              name = "check";
+              help = "Checks the source tree";
+              command = "nix flake check";
+            }
+          ];
+        };
+
+        # formatter
+        treefmt.config = {
+          inherit (config.flake-root) projectRootFile;
+          package = pkgs.treefmt;
+          flakeFormatter = true;
+          flakeCheck = true;
+          programs = {
+            alejandra.enable = true;
+            black.enable = true;
+            deadnix.enable = true;
+            mdformat.enable = true;
+            prettier.enable = true;
+          };
+          settings.formatter.prettier.excludes = ["*.md"];
+        };
+
+        # checks
+        checks = {
+          nix-build-all = let
+            devour-flake = pkgs.callPackage inputs.devour-flake {};
+          in
+            pkgs.writeShellApplication {
+              name = "nix-build-all";
+              runtimeInputs = [
+                pkgs.nix
+                devour-flake
+              ];
+              text = ''
+                # Make sure that flake.lock is sync
+                nix flake lock --no-update-lock-file
+
+                # Do a full nix build (all outputs)
+                devour-flake . "$@"
+              '';
+            };
+        };
+
+        # packages
+        packages.mkdocs-nixos-options = pkgs.python311Packages.buildPythonPackage rec {
+          pname = "mkdocs-nixos-options";
+          version = "0.1.0";
+          format = "pyproject";
+
+          src = lib.cleanSource ./.;
+
+          buildInputs = with pkgs.python311Packages; [
+            mkdocs
+          ];
+
+          propagatedBuildInputs = with pkgs.python311Packages; [
+            jinja2
+          ];
+
+          nativeBuildInputs = with pkgs.python311Packages; [
+            poetry-core
+          ];
+
+          nativeCheckInputs = with pkgs.python311Packages; [
+            pytestCheckHook
+            pythonImportsCheckHook
+            pytest-mock
+          ];
+
+          pythonImportsCheck = [
+            "mkdocs_nixos_options"
+          ];
+
+          meta = with lib; {
+            homepage = "https://github.com/aldoborrero/mkdocs-nixos-options";
+            description = "Render your NixOS options on MkDocs";
+            changelog = "https://github.com/aldoborrero/mkdocs-nixos-options/releases/v${version}";
+            license = licenses.mit;
+            maintainers = with maintainers; [aldoborrero];
+          };
         };
       };
     };
